@@ -1,0 +1,113 @@
+#include <iostream>
+#include <cmath>
+#include <iomanip>
+#include <fstream>
+#define OUTPUT "output.txt"
+
+using namespace std;
+
+int Nx = 101, Ny = 101, Nt = 101;  //  quantity of x, y and t nodes
+double hx = M_PI/3/(Nx-1);  //  x step
+double hy = M_PI/2/(Ny-1);  //  y step
+double t = 0.1/(Nt-1);  //  t step
+double *** u;  //  main array
+double ** y;  //  temporary array
+double * alpha, * beta;  //  arrays of Progonka coefficients
+double * F;  //  factorisation`s coefficients array
+double a = 1;  //  coefficient before the Laplacian
+double Ax = 0.5*a*t/hx/hx;  //  factorization method`s coefficients
+double Bx = 0.5*a*t/hx/hx;
+double Cx = 1 + a*t/hx/hx;
+double Ay = 0.5*a*t/hy/hy;
+double By = 0.5*a*t/hy/hy;
+double Cy = 1 + a*t/hy/hy;
+double chi1_x = 1, nu1_x = 0;  //  u(x==0) == chi1_x * u(x==1) + nu1_x
+double chi2_x = 1, nu2_x = 0;  //  u(x==Nx) == chi2_x * u(x==Nx-1) + nu2_x
+double chi1_y = 0, nu1_y = 0;  //  u(y==0) == chi1_y * u(y==1) + nu1_y
+double chi2_y = 0, nu2_y = 0;  //  u(y==Ny) == chi2_y * u(y==Ny-1) + nu2_y
+
+void Create_Array() {
+	u = new double ** [Nx];
+	y = new double * [Nx];
+	F = new double [(Nx >= Ny) ? (Nx-2) : (Ny-2)];
+	alpha = new double [(Nx >= Ny) ? (Nx-1) : (Ny-1)];
+	beta = new double [(Nx >= Ny) ? (Nx-1) : (Ny-1)];
+	for (int i = 0; i < Nx; ++i) {
+		u[i] = new double * [Ny];
+		y[i] = new double [Ny-2];
+		for (int j = 0; j < Ny; ++j)
+			u[i][j] = new double [Nt];
+	}
+	if (!(u&&y&&F&&alpha&&beta)) {
+		cout << " Alloration error \n";
+		exit(1);
+	}
+}
+
+void Initiate_Array() {
+	for (int i = 0; i < Nx; ++i)
+		for (int k = 0; k < Ny; ++k) {
+			u[i][k][0] = cos(3*i*hx) * sin(4*k*hy);  //  u(x, y, 0) = cos(3*x) * sin(4*y)
+			for (int j = 1; j < Nt; ++j)
+				u[i][k][j] = 0;  //  other 0
+		}
+}
+
+double f(int i, int k, double j) {  //  heterogeneity
+	return 0;
+}
+
+void Compute() {
+	for (int j = 1; j < Nt; ++j) {
+		alpha[0] = chi1_x;
+		beta[0] = nu1_x;
+		for (int k = 1; k < Ny - 1; ++k) {  //  first half step
+			for (int i = 1; i < Nx - 1; ++i) {  //  direct run
+				F[i-1] = 0.5*a*t/hy/hy*(u[i][k-1][j-1] + u[i][k+1][j-1]) + (1-a*t/hy/hy) * u[i][k][j-1] + 0.5*t*f(i, k, j-0.5);
+				alpha[i] = Bx/(Cx - Ax * alpha[i-1]);
+				beta[i] = (Ax * beta[i-1] + F[i-1])/(Cx - Ax * alpha[i-1]);
+			}
+			y[Nx-1][k-1] = (nu2_x + chi2_x * beta[Nx - 2])/(1 - chi2_x * alpha[Nx - 2]);  //  reverse run
+			for (int i = Nx - 2; i >= 0; --i)
+				y[i][k-1] = alpha[i] * y[i+1][k-1] + beta[i];
+		}
+		alpha[0] = chi1_y;  //  second half step
+		beta[0] = nu1_y;
+		for (int i = 1; i < Nx - 1; ++i) {
+			for (int k = 1; k < Ny - 1; ++k) {  //  direct run
+				F[k-1] = 0.5 * a*t/hx/hx * (y[i-1][k-1] + y[i+1][k-1]) + (1 - a*t/hx/hx) * y[i][k-1] + 0.5 * t * f(i, k, j-0.5);
+				alpha[k] = By/(Cy - Ay * alpha[k-1]);
+				beta[k] = (Ay * beta[k-1] + F[k-1])/(Cy - Ay * alpha[k-1]);
+			}
+			u[i][Ny-1][j] = (nu2_y + chi2_y * beta[Ny-2])/(1 - chi2_y * alpha[Ny - 2]);  //  reverse run
+			for (int k = Ny - 2; k >= 0; --k)
+				u[i][k][j] = alpha[k] * u[i][k+1][j] + beta[k];
+		}
+		for (int k = 0; k < Ny; ++k) {
+			u[0][k][j] = chi1_x * u[1][k][j] + nu1_x;
+			u[Nx-1][k][j] = chi2_x * u[Nx-2][k][j] + nu2_x;
+		}
+	}
+}
+
+void Write_File() {
+	ofstream output(OUTPUT, ios_base::trunc);
+	output << scientific;
+	for (int j = 0; j < Nt; ++j) {
+		for (int i = 0; i < Nx; ++i) {
+			for (int k = 0; k < Ny; ++k)
+				output << u[i][k][j] << " ";
+			output << "\n";
+		}
+		output << "\n\n\n";
+	}
+	output.close();
+}
+
+int main() {
+	Create_Array();
+	Initiate_Array();
+	Compute();
+	Write_File();
+	return 0;
+}
